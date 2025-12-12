@@ -147,6 +147,12 @@
         let bibleData = [];
         let isDataLoaded = false;
 
+        // Global state for pagination
+        let currentResults = [];
+        let currentQuery = "";
+        let currentRenderCount = 0;
+        const ITEMS_PER_PAGE = 20;
+
         // Book Name Mapping (Full -> Abbr)
         const BOOK_MAP = {
             "창세기": "창", "출애굽기": "출", "레위기": "레", "민수기": "민", "신명기": "신",
@@ -199,8 +205,34 @@
             const input = document.getElementById('searchInput').value.trim();
             if (!input) return;
 
-            const results = performSearch(input);
-            renderResults(results, input);
+            currentQuery = input;
+
+            // Perform search and determine type
+            const searchResult = performSearch(input);
+            currentResults = searchResult.data;
+            const isReference = searchResult.isReference;
+
+            const list = document.getElementById('resultList');
+            const status = document.getElementById('status');
+            list.innerHTML = "";
+            currentRenderCount = 0;
+
+            if (currentResults.length === 0) {
+                status.textContent = "검색 결과가 없습니다.";
+                // Remove load more button if exists
+                removeLoadMoreBtn();
+                return;
+            }
+
+            status.textContent = `검색 결과: ${currentResults.length}개`;
+
+            if (isReference) {
+                // If it's a reference search (e.g. Gen 1), show ALL results
+                renderBatch(currentResults.length);
+            } else {
+                // If it's a keyword search, show first 20
+                renderBatch(ITEMS_PER_PAGE);
+            }
         }
 
         function performSearch(query) {
@@ -212,44 +244,35 @@
 
             if (match) {
                 let [, bookStr, chapterStr, verseStr] = match;
-
-                // Normalize book name (창세기 -> 창)
-                // If explicit match in map, use it. Else assume user typed abbr (e.g. "창").
                 let book = BOOK_MAP[bookStr] || bookStr;
-
                 const chapter = parseInt(chapterStr, 10);
                 const verse = verseStr ? parseInt(verseStr, 10) : null;
 
-                // Filter
-                return bibleData.filter(item => {
+                const data = bibleData.filter(item => {
                     if (item.book !== book) return false;
                     if (item.chapter !== chapter) return false;
                     if (verse && item.verse !== verse) return false;
                     return true;
                 });
+
+                return { data: data, isReference: true };
             }
 
             // 2. Fallback: Keyword Search
-            return bibleData.filter(item => item.content.includes(query));
+            const data = bibleData.filter(item => item.content.includes(query));
+            return { data: data, isReference: false };
         }
 
-        function renderResults(results, query) {
+        function renderBatch(count) {
             const list = document.getElementById('resultList');
-            const status = document.getElementById('status');
-            list.innerHTML = "";
+            const fragment = document.createDocumentFragment();
 
-            if (results.length === 0) {
-                status.textContent = "검색 결과가 없습니다.";
-                return;
-            }
+            // Calculate range
+            const start = currentRenderCount;
+            const end = Math.min(start + count, currentResults.length);
 
-            status.textContent = `검색 결과: ${results.length}개`;
-
-            // Render max 100 to prevent freezing
-            const LIMIT = 100;
-            const renderData = results.slice(0, LIMIT);
-
-            renderData.forEach(item => {
+            for (let i = start; i < end; i++) {
+                const item = currentResults[i];
                 const li = document.createElement('li');
                 li.className = "result-item";
 
@@ -260,29 +283,50 @@
                 const content = document.createElement('span');
                 content.className = "verse-content";
 
-                // Highlight keyword if it was a keyword search
+                // Highlight keyword
                 // Simple heuristic: if query is NOT a reference match (no digits), treat as keyword
-                const isRefSearch = /\d/.test(query); // Has numbers? assumes ref search mostly
+                const isRefSearch = /\d/.test(currentQuery);
                 if (!isRefSearch) {
-                    const parts = item.content.split(query);
-                    content.innerHTML = parts.join(`<span class="highlight">${query}</span>`);
+                    const parts = item.content.split(currentQuery);
+                    content.innerHTML = parts.join(`<span class="highlight">${currentQuery}</span>`);
                 } else {
                     content.textContent = item.content;
                 }
 
                 li.appendChild(ref);
                 li.appendChild(content);
-                list.appendChild(li);
-            });
-
-            if (results.length > LIMIT) {
-                const more = document.createElement('div');
-                more.style.textAlign = 'center';
-                more.style.padding = '10px';
-                more.style.color = '#888';
-                more.textContent = `... 외 ${results.length - LIMIT}개 결과 더 있음`;
-                list.appendChild(more);
+                fragment.appendChild(li);
             }
+
+            list.appendChild(fragment);
+            currentRenderCount = end;
+
+            // Handle Load More Button
+            updateLoadMoreButton();
+        }
+
+        function updateLoadMoreButton() {
+            removeLoadMoreBtn();
+
+            if (currentRenderCount < currentResults.length) {
+                const list = document.getElementById('resultList');
+                const btnContainer = document.createElement('div');
+                btnContainer.id = "loadMoreContainer";
+                btnContainer.style.textAlign = 'center';
+                btnContainer.style.marginTop = '20px';
+
+                const btn = document.createElement('button');
+                btn.textContent = "더 보기";
+                btn.onclick = () => renderBatch(ITEMS_PER_PAGE);
+
+                btnContainer.appendChild(btn);
+                list.parentNode.insertBefore(btnContainer, list.nextSibling);
+            }
+        }
+
+        function removeLoadMoreBtn() {
+            const existing = document.getElementById('loadMoreContainer');
+            if (existing) existing.remove();
         }
     </script>
 
