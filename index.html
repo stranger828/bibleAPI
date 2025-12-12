@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>개역개정 성경 검색</title>
+    <style>
+        :root {
+            --primary-color: #3b82f6;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-sub: #64748b;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        h1 {
+            text-align: center;
+            color: var(--text-main);
+            margin-bottom: 30px;
+            font-weight: 800;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 12px 16px;
+            font-size: 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--primary-color);
+        }
+
+        button {
+            padding: 12px 24px;
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #2563eb;
+        }
+
+        button:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+
+        #status {
+            text-align: center;
+            font-size: 14px;
+            color: var(--text-sub);
+            margin-bottom: 20px;
+            height: 20px;
+        }
+
+        .result-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .result-item {
+            padding: 16px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .verse-ref {
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-right: 8px;
+            font-size: 0.95em;
+        }
+
+        .verse-content {
+            line-height: 1.6;
+        }
+
+        .highlight {
+            background-color: #fef08a;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>개역개정 성경 검색</h1>
+
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="예: 창 1장, 요 3:16, 태초에"
+                onkeydown="if(event.key === 'Enter') searchBible()">
+            <button id="searchBtn" onclick="searchBible()">검색</button>
+        </div>
+
+        <div id="status">데이터 준비중...</div>
+        <ul id="resultList" class="result-list"></ul>
+    </div>
+
+    <script>
+        const BIBLE_URL = "./bible_structured.json";
+        let bibleData = [];
+        let isDataLoaded = false;
+
+        // Book Name Mapping (Full -> Abbr)
+        const BOOK_MAP = {
+            "창세기": "창", "출애굽기": "출", "레위기": "레", "민수기": "민", "신명기": "신",
+            "여호수아": "수", "사사기": "삿", "룻기": "룻", "사무엘상": "삼상", "사무엘하": "삼하",
+            "열왕기상": "왕상", "열왕기하": "왕하", "역 대상": "대상", "역대하": "대하", "에스라": "스",
+            "느헤미야": "느", "에스더": "에", "욥기": "욥", "시편": "시", "잠언": "잠",
+            "전도서": "전", "아가": "아", "이사야": "사", "예레미야": "렘", "예레미야애가": "애",
+            "에스겔": "겔", " 다니엘": "단", "호세아": "호", "요엘": "욜", "아모스": "암",
+            "오바댜": "옵", "요나": "욘", "미가": "미", "나훔": "나", "하박국": "합",
+            "스바냐": "습", "학개": "학", "스가랴": "슥", "말라기": "말",
+            "마태복음": "마", "마가복음": "막", "누가복음": "눅", "요한복음": "요", "사도행전": "행",
+            "로마서": "롬", "고린도전서": "고전", "고린도후서": "고후", "갈라디아서": "갈", "에베소서": "엡",
+            "빌립보서": "빌", "골로새서": "골", "데살로니가전서": "살전", "데살로니가후서": "살후", "디모데전서": "딤전",
+            "디모데후서": "딤후", "디도서": "딛", "빌레몬서": "몬", "히브리서": "히", "야고보서": "약",
+            "베드로전서": "벧전", "베드로후서": "벧후", "요한일서": "요일", "요한이서": "요이", "요한삼서": "요삼",
+            "유다서": "유", "요한계시록": "계"
+        };
+
+        // Initialize
+        window.onload = async () => {
+            const statusEl = document.getElementById('status');
+            const searchBtn = document.getElementById('searchBtn');
+
+            statusEl.textContent = "성경 데이터 다운로드 중... (약 6MB)";
+            searchBtn.disabled = true;
+
+            try {
+                const response = await fetch(BIBLE_URL);
+                if (!response.ok) throw new Error("네트워크 오류");
+
+                bibleData = await response.json();
+                isDataLoaded = true;
+
+                statusEl.textContent = `데이터 로드 완료! (총 ${bibleData.length}절)`;
+                searchBtn.disabled = false;
+
+                // Focus input
+                document.getElementById('searchInput').focus();
+
+            } catch (error) {
+                console.error(error);
+                statusEl.textContent = "데이터 로드 실패. 새로고침 해주세요.";
+                statusEl.style.color = "red";
+            }
+        };
+
+        function searchBible() {
+            if (!isDataLoaded) return;
+
+            const input = document.getElementById('searchInput').value.trim();
+            if (!input) return;
+
+            const results = performSearch(input);
+            renderResults(results, input);
+        }
+
+        function performSearch(query) {
+            // 1. Try Parse "Book Chapter:Verse" pattern
+            // Regex: [BookName] [Chapter] [: Verse]
+            // Supports: "창 1", "창 1:1", "창세기 1장", "요3:16"
+            const refRegex = /^([가-힣]+)\s*(\d+)(?:[:장]\s*(\d+))?.*$/;
+            const match = query.match(refRegex);
+
+            if (match) {
+                let [, bookStr, chapterStr, verseStr] = match;
+
+                // Normalize book name (창세기 -> 창)
+                // If explicit match in map, use it. Else assume user typed abbr (e.g. "창").
+                let book = BOOK_MAP[bookStr] || bookStr;
+
+                const chapter = parseInt(chapterStr, 10);
+                const verse = verseStr ? parseInt(verseStr, 10) : null;
+
+                // Filter
+                return bibleData.filter(item => {
+                    if (item.book !== book) return false;
+                    if (item.chapter !== chapter) return false;
+                    if (verse && item.verse !== verse) return false;
+                    return true;
+                });
+            }
+
+            // 2. Fallback: Keyword Search
+            return bibleData.filter(item => item.content.includes(query));
+        }
+
+        function renderResults(results, query) {
+            const list = document.getElementById('resultList');
+            const status = document.getElementById('status');
+            list.innerHTML = "";
+
+            if (results.length === 0) {
+                status.textContent = "검색 결과가 없습니다.";
+                return;
+            }
+
+            status.textContent = `검색 결과: ${results.length}개`;
+
+            // Render max 100 to prevent freezing
+            const LIMIT = 100;
+            const renderData = results.slice(0, LIMIT);
+
+            renderData.forEach(item => {
+                const li = document.createElement('li');
+                li.className = "result-item";
+
+                const ref = document.createElement('span');
+                ref.className = "verse-ref";
+                ref.textContent = `${item.book}${item.chapter}:${item.verse}`;
+
+                const content = document.createElement('span');
+                content.className = "verse-content";
+
+                // Highlight keyword if it was a keyword search
+                // Simple heuristic: if query is NOT a reference match (no digits), treat as keyword
+                const isRefSearch = /\d/.test(query); // Has numbers? assumes ref search mostly
+                if (!isRefSearch) {
+                    const parts = item.content.split(query);
+                    content.innerHTML = parts.join(`<span class="highlight">${query}</span>`);
+                } else {
+                    content.textContent = item.content;
+                }
+
+                li.appendChild(ref);
+                li.appendChild(content);
+                list.appendChild(li);
+            });
+
+            if (results.length > LIMIT) {
+                const more = document.createElement('div');
+                more.style.textAlign = 'center';
+                more.style.padding = '10px';
+                more.style.color = '#888';
+                more.textContent = `... 외 ${results.length - LIMIT}개 결과 더 있음`;
+                list.appendChild(more);
+            }
+        }
+    </script>
+
+</body>
+
+</html>
